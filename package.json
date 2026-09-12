@@ -1,0 +1,35 @@
+{
+  "name": "zhixing-life-paper",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c cyan,magenta \"pnpm dev:web\" \"pnpm dev:api\"",
+    "dev:web": "vite",
+    "dev:api": "tsc -p tsconfig.server.json && node --env-file=.env --env-file=.env.local dist-server/server/index.js",
+    "build": "tsc -b && vite build && tsc -p tsconfig.server.json",
+    "preview": "vite preview",
+    "typecheck": "tsc -b && tsc -p tsconfig.server.json --noEmit",
+    "start": "node --env-file=.env --env-file=.env.local dist-server/server/index.js",
+    "test": "node --test dist-server/server/**/*.test.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "express": "latest",
+    "pg": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/express": "latest",
+    "@types/node": "latest",
+    "@types/pg": "latest",
+    "concurrently": "latest",
+    "tsx": "latest"
+  }
+}
