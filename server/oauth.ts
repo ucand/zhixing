@@ -49,13 +49,21 @@ function queryValue(request: Request, ...names: string[]) {
   return ''
 }
 function profileFromToken(payload: Record<string, unknown>) {
-  const user = (payload.user ?? payload.user_info ?? payload.userInfo) as Record<string, unknown> | undefined
-  const source = user ?? payload
-  const name = [source.name, source.Name, source.fullname, source.Fullname, source.full_name, source.FullName, source.nickname, source.Nickname, source.user_name, source.UserName, source.display_name, source.DisplayName]
-    .find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim()
-  const providerUserId = [source.id, source.Id, source.user_id, source.UserId, source.url_token, source.UrlToken, source.urlToken]
-    .find((value): value is string | number => (typeof value === 'string' && value.trim().length > 0) || typeof value === 'number')
-  return { name: name || '知乎用户', providerUserId: providerUserId === undefined ? null : String(providerUserId) }
+  const names = new Set(['name', 'Name', 'fullname', 'Fullname', 'full_name', 'FullName', 'nickname', 'Nickname', 'user_name', 'UserName', 'display_name', 'DisplayName'])
+  const ids = new Set(['id', 'Id', 'user_id', 'UserId', 'url_token', 'UrlToken', 'urlToken'])
+  let foundName: string | undefined
+  let foundId: string | number | undefined
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== 'object' || foundName && foundId !== undefined) return
+    if (Array.isArray(value)) { for (const item of value) visit(item); return }
+    for (const [key, child] of Object.entries(value)) {
+      if (!foundName && names.has(key) && typeof child === 'string' && child.trim()) foundName = child.trim()
+      if (foundId === undefined && ids.has(key) && ((typeof child === 'string' && child.trim()) || typeof child === 'number')) foundId = child
+      visit(child)
+    }
+  }
+  visit(payload)
+  return { name: foundName || '知乎用户', providerUserId: foundId === undefined ? null : String(foundId) }
 }
 async function fetchZhihuProfile(accessToken: string): Promise<{ name?: string; providerUserId?: string | null }> {
   const accessSecret = process.env.ZHIHU_ACCESS_SECRET
