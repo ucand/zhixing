@@ -4,7 +4,7 @@ import { ZodError } from 'zod'
 import { appStateSchema, generateRequestSchema, notebookMutationSchema, noteMutationSchema, paperPersistenceSchema, taskMutationSchema } from './contracts.js'
 import { databaseHealth } from './db.js'
 import { generateWithZhihu, searchZhihu } from './zhihu.js'
-import { beginZhihuOAuth, completeZhihuOAuth, currentOAuthUser, logoutOAuth, oauthConfigured, requireOAuthUserId } from './oauth.js'
+import { beginZhihuOAuth, completeZhihuOAuth, currentOAuthUser, logoutOAuth, oauthConfigured } from './oauth.js'
 import { createNotebook, createNote, createPaper, deleteNotebook, deleteNote, deletePaper, migrateState, readState, updateNotebook, updateNote, updateTask } from './repository.js'
 
 const app = express()
@@ -23,20 +23,17 @@ app.get('/api/auth/zhihu/callback', async (request, response, next) => { try { a
 app.get('/api/auth/me', async (request, response, next) => { try { response.json({ user: await currentOAuthUser(request) }) } catch (error) { next(error) } })
 app.post('/api/auth/logout', async (request, response, next) => { try { await logoutOAuth(request, response) } catch (error) { next(error) } })
 
-app.get('/api/state', async (request, response, next) => { try { response.json(await readState(await requireOAuthUserId(request))) } catch (error) { next(error) } })
-// Kept as a compatibility endpoint for cached clients. Local-to-remote
-// migration is intentionally disabled in multi-user mode, so old clients
-// cannot import another user's browser cache or trigger schema failures.
-app.post('/api/state/migrate', async (request, response, next) => { try { await requireOAuthUserId(request); response.json({ imported: { notebooks: 0, notes: 0, papers: 0 }, skipped: true }) } catch (error) { next(error) } })
-app.delete('/api/notebooks/:id', async (request, response, next) => { try { await deleteNotebook(request.params.id, await requireOAuthUserId(request)); response.status(204).end() } catch (error) { next(error) } })
-app.post('/api/notebooks', async (request, response, next) => { try { response.status(201).json(await createNotebook(notebookMutationSchema.parse(request.body), await requireOAuthUserId(request))) } catch (error) { next(error) } })
-app.patch('/api/notebooks/:id', async (request, response, next) => { try { response.json(await updateNotebook(request.params.id, notebookMutationSchema.parse(request.body), await requireOAuthUserId(request))) } catch (error) { next(error) } })
-app.delete('/api/notes/:id', async (request, response, next) => { try { await deleteNote(request.params.id, await requireOAuthUserId(request)); response.status(204).end() } catch (error) { next(error) } })
-app.post('/api/notes', async (request, response, next) => { try { response.status(201).json(await createNote(noteMutationSchema.required({ notebookId: true }).parse(request.body), await requireOAuthUserId(request))) } catch (error) { next(error) } })
-app.patch('/api/notes/:id', async (request, response, next) => { try { response.json(await updateNote(request.params.id, noteMutationSchema.omit({ notebookId: true, source: true }).parse(request.body), await requireOAuthUserId(request))) } catch (error) { next(error) } })
-app.delete('/api/papers/:id', async (request, response, next) => { try { await deletePaper(request.params.id, await requireOAuthUserId(request)); response.status(204).end() } catch (error) { next(error) } })
-app.post('/api/papers', async (request, response, next) => { try { const paper = paperPersistenceSchema.parse(request.body); await createPaper(paper, await requireOAuthUserId(request)); response.status(201).json(paper) } catch (error) { next(error) } })
-app.patch('/api/tasks/:id', async (request, response, next) => { try { const input = taskMutationSchema.parse(request.body); response.json(await updateTask(request.params.id, input.completed, await requireOAuthUserId(request))) } catch (error) { next(error) } })
+app.get('/api/state', async (_request, response, next) => { try { response.json(await readState()) } catch (error) { next(error) } })
+app.post('/api/state/migrate', async (request, response, next) => { try { const state = appStateSchema.parse(request.body); response.json(await migrateState(state)) } catch (error) { next(error) } })
+app.delete('/api/notebooks/:id', async (request, response, next) => { try { await deleteNotebook(request.params.id); response.status(204).end() } catch (error) { next(error) } })
+app.post('/api/notebooks', async (request, response, next) => { try { response.status(201).json(await createNotebook(notebookMutationSchema.parse(request.body))) } catch (error) { next(error) } })
+app.patch('/api/notebooks/:id', async (request, response, next) => { try { response.json(await updateNotebook(request.params.id, notebookMutationSchema.parse(request.body))) } catch (error) { next(error) } })
+app.delete('/api/notes/:id', async (request, response, next) => { try { await deleteNote(request.params.id); response.status(204).end() } catch (error) { next(error) } })
+app.post('/api/notes', async (request, response, next) => { try { response.status(201).json(await createNote(noteMutationSchema.required({ notebookId: true }).parse(request.body))) } catch (error) { next(error) } })
+app.patch('/api/notes/:id', async (request, response, next) => { try { response.json(await updateNote(request.params.id, noteMutationSchema.omit({ notebookId: true, source: true }).parse(request.body))) } catch (error) { next(error) } })
+app.delete('/api/papers/:id', async (request, response, next) => { try { await deletePaper(request.params.id); response.status(204).end() } catch (error) { next(error) } })
+app.post('/api/papers', async (request, response, next) => { try { const paper = paperPersistenceSchema.parse(request.body); await createPaper(paper); response.status(201).json(paper) } catch (error) { next(error) } })
+app.patch('/api/tasks/:id', async (request, response, next) => { try { const input = taskMutationSchema.parse(request.body); response.json(await updateTask(request.params.id, input.completed)) } catch (error) { next(error) } })
 
 app.get('/api/zhihu/search', async (request, response, next) => {
   try {
@@ -73,7 +70,7 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   if (error instanceof ZodError) return response.status(422).json({ error: { code: 'INVALID_RESPONSE', message: '数据结构校验失败', details: error.issues } })
   const message = error instanceof Error ? error.message : '服务暂时不可用'
   const quota = /额度|频率|rate limit/i.test(message)
-  const auth = /鉴权|secret|auth|credential|请先登录|无权操作|无权访问/i.test(message)
+  const auth = /鉴权|secret|auth|credential/i.test(message)
   response.status(auth ? 401 : quota ? 429 : 502).json({ error: { code: auth ? 'AUTH_REQUIRED' : quota ? 'RATE_LIMITED' : 'UPSTREAM_ERROR', message } })
 })
 
