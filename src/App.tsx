@@ -191,11 +191,17 @@ export function App() {
             setNotebookId(remoteState.notebooks[0]?.id ?? "");
             setPaperId(remoteState.papers[0]?.id ?? null);
           }
-        } else if (!oauthUser && (
+        } else if (oauthUser) {
+          if (mounted) {
+            setState(remoteState);
+            setNotebookId("");
+            setPaperId(null);
+          }
+        } else if (
           localState.notebooks.length ||
           localState.notes.length ||
           localState.papers.length
-        )) {
+        ) {
           await migrateLocalState(localState);
           const migrated = await loadRemoteState();
           if (mounted) {
