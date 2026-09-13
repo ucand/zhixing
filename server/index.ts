@@ -4,6 +4,7 @@ import { ZodError } from 'zod'
 import { appStateSchema, generateRequestSchema, notebookMutationSchema, noteMutationSchema, paperPersistenceSchema, taskMutationSchema } from './contracts.js'
 import { databaseHealth } from './db.js'
 import { generateWithZhihu, searchZhihu } from './zhihu.js'
+import { beginZhihuOAuth, completeZhihuOAuth, currentOAuthUser, logoutOAuth, oauthConfigured } from './oauth.js'
 import { createNotebook, createNote, createPaper, deleteNotebook, deleteNote, deletePaper, migrateState, readState, updateNotebook, updateNote, updateTask } from './repository.js'
 
 const app = express()
@@ -14,8 +15,13 @@ app.disable('x-powered-by')
 app.use(express.json({ limit: '256kb' }))
 
 app.get('/api/health', async (_request, response) => {
-  response.json({ ok: true, database: await databaseHealth(), zhihu: process.env.ZHIHU_ACCESS_SECRET ? 'http' : 'cli' })
+  response.json({ ok: true, database: await databaseHealth(), zhihu: process.env.ZHIHU_ACCESS_SECRET ? 'http' : 'cli', oauth: oauthConfigured() ? 'configured' : 'not_configured' })
 })
+
+app.get('/api/auth/zhihu', async (_request, response, next) => { try { await beginZhihuOAuth(response) } catch (error) { next(error) } })
+app.get('/api/auth/zhihu/callback', async (request, response, next) => { try { await completeZhihuOAuth(request, response) } catch (error) { next(error) } })
+app.get('/api/auth/me', async (request, response, next) => { try { response.json({ user: await currentOAuthUser(request) }) } catch (error) { next(error) } })
+app.post('/api/auth/logout', async (request, response, next) => { try { await logoutOAuth(request, response) } catch (error) { next(error) } })
 
 app.get('/api/state', async (_request, response, next) => { try { response.json(await readState()) } catch (error) { next(error) } })
 app.post('/api/state/migrate', async (request, response, next) => { try { const state = appStateSchema.parse(request.body); response.json(await migrateState(state)) } catch (error) { next(error) } })

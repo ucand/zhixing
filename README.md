@@ -24,9 +24,12 @@ pnpm preview
 
 - `DATABASE_URL`：Neon/Supabase 的连接池地址
 - `ZHIHU_ACCESS_SECRET`：知乎开放平台 Access Secret
+- `ZHIHU_APP_ID`、`ZHIHU_APP_KEY`：知乎 OAuth 应用凭证，仅服务端使用
+- `ZHIHU_OAUTH_REDIRECT_URI`：已在知乎开放平台登记的 OAuth 回调地址
+- `ZHIHU_OAUTH_SESSION_SECRET`：至少 32 位随机字符串，用于会话哈希和 Token 加密
 - `VERCEL=1`：Vercel 会自动注入，可不手动配置
 
-首次部署前，在目标 PostgreSQL 数据库依次执行 `db/migrations/001_initial.sql` 和 `db/migrations/002_note_color.sql`。生产环境不要开放 `POST /api/state/migrate`，并应在上线前增加登录态和 `user_id` 数据隔离。
+首次部署前，在目标 PostgreSQL 数据库依次执行 `db/migrations/001_initial.sql`、`db/migrations/002_note_color.sql` 和 `db/migrations/003_zhihu_oauth.sql`。生产环境不要开放 `POST /api/state/migrate`，并应逐步将业务接口改为按登录用户做 `user_id` 数据隔离。
 
 Vercel 部署步骤：
 

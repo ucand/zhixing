@@ -549,6 +549,9 @@ function Header({
           答卷
         </button>
       </nav>
+      <button className="tool" type="button" onClick={() => { window.location.href = "/api/auth/zhihu" }}>
+        绑定知乎
+      </button>
     </header>
   );
 }
