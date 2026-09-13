@@ -13,7 +13,6 @@ import {
   hydratePaper,
   loadRemoteState,
   logoutOAuth,
-  migrateLocalState,
   searchZhihu,
   updateNotebookRemote,
   updateNoteRemote,
@@ -179,7 +178,6 @@ export function App() {
         if (health.database !== "connected") return;
         if (mounted) setDatabaseReady(true);
         const oauthUser = await getOAuthUser();
-        const localState = loadState();
         const remoteState = await loadRemoteState();
         if (
           remoteState.notebooks.length ||
@@ -196,18 +194,6 @@ export function App() {
             setState(remoteState);
             setNotebookId("");
             setPaperId(null);
-          }
-        } else if (
-          localState.notebooks.length ||
-          localState.notes.length ||
-          localState.papers.length
-        ) {
-          await migrateLocalState(localState);
-          const migrated = await loadRemoteState();
-          if (mounted) {
-            setState(migrated);
-            setNotebookId(migrated.notebooks[0]?.id ?? "");
-            setPaperId(migrated.papers[0]?.id ?? null);
           }
         }
       } catch (error) {
