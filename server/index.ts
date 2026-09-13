@@ -24,7 +24,10 @@ app.get('/api/auth/me', async (request, response, next) => { try { response.json
 app.post('/api/auth/logout', async (request, response, next) => { try { await logoutOAuth(request, response) } catch (error) { next(error) } })
 
 app.get('/api/state', async (request, response, next) => { try { response.json(await readState(await requireOAuthUserId(request))) } catch (error) { next(error) } })
-app.post('/api/state/migrate', async (request, response, next) => { try { const state = appStateSchema.parse(request.body); response.json(await migrateState(state, await requireOAuthUserId(request))) } catch (error) { next(error) } })
+// Kept as a compatibility endpoint for cached clients. Local-to-remote
+// migration is intentionally disabled in multi-user mode, so old clients
+// cannot import another user's browser cache or trigger schema failures.
+app.post('/api/state/migrate', async (request, response, next) => { try { await requireOAuthUserId(request); response.json({ imported: { notebooks: 0, notes: 0, papers: 0 }, skipped: true }) } catch (error) { next(error) } })
 app.delete('/api/notebooks/:id', async (request, response, next) => { try { await deleteNotebook(request.params.id, await requireOAuthUserId(request)); response.status(204).end() } catch (error) { next(error) } })
 app.post('/api/notebooks', async (request, response, next) => { try { response.status(201).json(await createNotebook(notebookMutationSchema.parse(request.body), await requireOAuthUserId(request))) } catch (error) { next(error) } })
 app.patch('/api/notebooks/:id', async (request, response, next) => { try { response.json(await updateNotebook(request.params.id, notebookMutationSchema.parse(request.body), await requireOAuthUserId(request))) } catch (error) { next(error) } })
