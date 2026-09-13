@@ -74,7 +74,18 @@ export async function deleteNotebook(id: string): Promise<void> {
     await client.query('commit')
   } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
 }
-export async function deleteNote(id: string): Promise<void> { const db = requirePool(); await db.query('delete from note where id = $1', [id]) }
+export async function deleteNote(id: string): Promise<void> {
+  const db = requirePool(); const client = await db.connect()
+  try {
+    await client.query('begin')
+    // A note may be referenced by one or more answer papers. The FK is
+    // intentionally RESTRICT, so remove only the join rows first and keep
+    // the answer papers themselves intact.
+    await client.query('delete from paper_note where note_id = $1', [id])
+    await client.query('delete from note where id = $1', [id])
+    await client.query('commit')
+  } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
+}
 export async function deletePaper(id: string): Promise<void> { const db = requirePool(); await db.query('delete from paper where id = $1', [id]) }
 
 export async function createPaper(paper: Paper): Promise<void> {
