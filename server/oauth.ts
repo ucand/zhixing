@@ -39,6 +39,14 @@ function clearStateCookie(response: Response) {
 }
 function getCookie(request: Request) { return request.headers.cookie?.match(/(?:^|; )zhixing_session=([^;]+)/)?.[1] }
 function getStateCookie(request: Request) { return request.headers.cookie?.match(/(?:^|; )zhixing_oauth_state=([^;]+)/)?.[1] }
+function queryValue(request: Request, ...names: string[]) {
+  for (const name of names) {
+    const value = request.query[name]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) return value[0].trim()
+  }
+  return ''
+}
 
 export function oauthConfigured() { return Boolean(process.env.ZHIHU_APP_ID && process.env.ZHIHU_APP_KEY && process.env.ZHIHU_OAUTH_REDIRECT_URI && process.env.ZHIHU_OAUTH_SESSION_SECRET) }
 
@@ -59,9 +67,12 @@ export async function beginZhihuOAuth(response: Response) {
 export async function completeZhihuOAuth(request: Request, response: Response) {
   const { appId, appKey, redirectUri, sessionSecret } = config()
   if (!pool) throw new Error('DATABASE_URL 未配置，无法完成 OAuth 授权')
-  const state = String(request.query.state ?? getStateCookie(request) ?? '')
-  const code = String(request.query.authorization_code ?? request.query.code ?? '')
-  if (!state || !code) throw new Error('知乎 OAuth 回调缺少授权参数')
+  const providerError = queryValue(request, 'error', 'error_code')
+  if (providerError) throw new Error(`知乎 OAuth 授权未完成：${queryValue(request, 'error_description', 'message') || providerError}`)
+  const state = queryValue(request, 'state') || getStateCookie(request) || ''
+  const code = queryValue(request, 'authorization_code', 'authorizationCode', 'auth_code', 'code')
+  if (!code) throw new Error('知乎 OAuth 回调未返回 authorization_code/code，请确认已点击“确认授权”且知乎应用配置正确')
+  if (!state) throw new Error('知乎 OAuth 回调缺少 state Cookie，请从知行页面重新发起授权，不要直接打开回调地址')
   const stateResult = await pool.query('delete from oauth_state where state_hash=$1 and redirect_uri=$2 and expires_at > now() returning id', [digest(state), redirectUri])
   if (!stateResult.rows[0]) throw new Error('知乎 OAuth state 无效或已过期')
   clearStateCookie(response)
