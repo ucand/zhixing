@@ -137,6 +137,11 @@ export async function currentOAuthUser(request: Request) {
   const result = await pool.query("select u.id, u.display_name, a.provider, a.expires_at from oauth_session s join app_user u on u.id=s.user_id left join zhihu_oauth_account a on a.user_id=u.id and a.provider='zhihu' where s.token_hash=$1 and s.expires_at > now()", [digest(token)])
   return result.rows[0] ?? null
 }
+export async function requireOAuthUserId(request: Request): Promise<string> {
+  const user = await currentOAuthUser(request)
+  if (!user) throw new Error('请先登录知乎后再操作')
+  return user.id as string
+}
 export async function logoutOAuth(request: Request, response: Response) {
   if (pool) { const token = getCookie(request); if (token) await pool.query('delete from oauth_session where token_hash=$1', [digest(token)]) }
   response.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`); response.status(204).end()
