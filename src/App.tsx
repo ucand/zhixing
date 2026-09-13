@@ -9,8 +9,10 @@ import {
   deletePaperRemote,
   generatePaperWithAi,
   getApiHealth,
+  getOAuthUser,
   hydratePaper,
   loadRemoteState,
+  logoutOAuth,
   migrateLocalState,
   searchZhihu,
   updateNotebookRemote,
@@ -157,8 +159,17 @@ export function App() {
   const [confirmingSubmit, setConfirmingSubmit] = useState(false);
   const [databaseReady, setDatabaseReady] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [oauthUser, setOauthUser] = useState<{ id: string; display_name: string } | null>(null);
 
   useEffect(() => saveState(state), [state]);
+
+  useEffect(() => {
+    let mounted = true;
+    void getOAuthUser().then((user) => {
+      if (mounted) setOauthUser(user ? { id: user.id, display_name: user.display_name } : null);
+    }).catch(() => { /* OAuth is optional; keep the offline UI usable. */ });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -405,7 +416,7 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <Header page={page} onPage={setPage} />
+      <Header page={page} onPage={setPage} oauthUser={oauthUser} onLogout={async () => { await logoutOAuth(); setOauthUser(null); }} />
       {syncNotice && (
         <div className="generation-notice sync-notice">
           {syncNotice}
@@ -523,9 +534,13 @@ function SubmitConfirm({
 function Header({
   page,
   onPage,
+  oauthUser,
+  onLogout,
 }: {
   page: Page;
   onPage: (page: Page) => void;
+  oauthUser: { id: string; display_name: string } | null;
+  onLogout: () => Promise<void>;
 }) {
   return (
     <header className="appbar">
@@ -549,9 +564,16 @@ function Header({
           答卷
         </button>
       </nav>
-      <button className="tool" type="button" onClick={() => { window.location.href = "/api/auth/zhihu" }}>
-        绑定知乎
-      </button>
+      {oauthUser ? (
+        <div className="oauth-user">
+          <span className="oauth-user-name">{oauthUser.display_name}</span>
+          <button className="tool" type="button" onClick={() => void onLogout()}>退出知乎</button>
+        </div>
+      ) : (
+        <button className="tool" type="button" onClick={() => { window.location.href = "/api/auth/zhihu" }}>
+          绑定知乎
+        </button>
+      )}
     </header>
   );
 }

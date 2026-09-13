@@ -1,6 +1,7 @@
 import type { AppState, GeneratedPaperData, Note, Notebook, Paper, PaperTask, ZhihuSearchItem } from './types'
 
 interface ApiErrorBody { error?: { code?: string; message?: string } }
+export interface OAuthUser { id: string; display_name: string; provider?: string; expires_at?: string | null }
 
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status: number) { super(message) }
@@ -35,6 +36,15 @@ export async function migrateLocalState(state: { notebooks: unknown[]; notes: un
 
 export async function getApiHealth(): Promise<{ database: string }> {
   return request('/api/health')
+}
+
+export async function getOAuthUser(): Promise<OAuthUser | null> {
+  const body = await request<{ user: OAuthUser | null }>('/api/auth/me')
+  return body.user
+}
+
+export async function logoutOAuth(): Promise<void> {
+  await request<void>('/api/auth/logout', { method: 'POST' })
 }
 
 export async function loadRemoteState(): Promise<AppState> {
