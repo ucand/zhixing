@@ -13,7 +13,6 @@ import {
   hydratePaper,
   loadRemoteState,
   logoutOAuth,
-  migrateLocalState,
   searchZhihu,
   updateNotebookRemote,
   updateNoteRemote,
@@ -160,25 +159,34 @@ export function App() {
   const [databaseReady, setDatabaseReady] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [oauthUser, setOauthUser] = useState<{ id: string; display_name: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  useEffect(() => saveState(state), [state]);
+  useEffect(() => saveState(state, oauthUser?.id ?? "anonymous"), [state, oauthUser?.id]);
 
   useEffect(() => {
     let mounted = true;
     void getOAuthUser().then((user) => {
-      if (mounted) setOauthUser(user ? { id: user.id, display_name: user.display_name } : null);
-    }).catch(() => { /* OAuth is optional; keep the offline UI usable. */ });
+      if (!mounted) return;
+      if (user) {
+        const userState = loadState(user.id);
+        setState(userState);
+        setNotebookId(userState.notebooks[0]?.id ?? "");
+        setPaperId(userState.papers[0]?.id ?? null);
+      }
+      setOauthUser(user ? { id: user.id, display_name: user.display_name } : null);
+      setAuthChecked(true);
+    }).catch(() => { if (mounted) setAuthChecked(true); /* OAuth is optional; keep the offline UI usable. */ });
     return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
     let mounted = true;
+    if (!authChecked || !oauthUser) return () => { mounted = false; };
     const syncDatabase = async () => {
       try {
         const health = await getApiHealth();
         if (health.database !== "connected") return;
         if (mounted) setDatabaseReady(true);
-        const localState = loadState();
         const remoteState = await loadRemoteState();
         if (
           remoteState.notebooks.length ||
@@ -189,18 +197,6 @@ export function App() {
             setState(remoteState);
             setNotebookId(remoteState.notebooks[0]?.id ?? "");
             setPaperId(remoteState.papers[0]?.id ?? null);
-          }
-        } else if (
-          localState.notebooks.length ||
-          localState.notes.length ||
-          localState.papers.length
-        ) {
-          await migrateLocalState(localState);
-          const migrated = await loadRemoteState();
-          if (mounted) {
-            setState(migrated);
-            setNotebookId(migrated.notebooks[0]?.id ?? "");
-            setPaperId(migrated.papers[0]?.id ?? null);
           }
         }
       } catch (error) {
@@ -217,7 +213,7 @@ export function App() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [authChecked, oauthUser]);
 
   const notes = useMemo(
     () => state.notes.filter((note) => note.notebookId === notebookId),
@@ -241,7 +237,7 @@ export function App() {
     name: string;
     color: string;
   }) => {
-    if (!databaseReady) return;
+    if (!oauthUser || !databaseReady) return;
     try {
       const remote = await createNotebookRemote({
         name: book.name,
@@ -292,7 +288,7 @@ export function App() {
         ? current.notes.map((note) => (note.id === editor.id ? next : note))
         : [next, ...current.notes],
     }));
-    if (databaseReady) {
+    if (oauthUser && databaseReady) {
       if (existing)
         void updateNoteRemote(next.id, {
           tag: next.tag,
@@ -327,7 +323,7 @@ export function App() {
       selected: false,
     };
     update((current) => ({ ...current, notes: [next, ...current.notes] }));
-    if (databaseReady)
+    if (oauthUser && databaseReady)
       void createNoteRemote(next)
         .then((remote) =>
           update((current) => ({
@@ -349,7 +345,7 @@ export function App() {
         item.id === note.id ? { ...item, selected } : item,
       ),
     }));
-    if (databaseReady)
+    if (oauthUser && databaseReady)
       void updateNoteRemote(note.id, {
         tag: note.tag,
         color: note.color,
@@ -363,7 +359,7 @@ export function App() {
       ...current,
       notes: current.notes.filter((item) => item.id !== note.id),
     }));
-    if (databaseReady) void deleteNoteRemote(note.id).catch(reportSyncFailure);
+    if (oauthUser && databaseReady) void deleteNoteRemote(note.id).catch(reportSyncFailure);
   };
 
   const submit = async () => {
@@ -399,7 +395,7 @@ export function App() {
         );
       }
       update((current) => ({ ...current, papers: [...current.papers, next] }));
-      if (databaseReady) {
+      if (oauthUser && databaseReady) {
         try {
           await createPaperRemote(next);
         } catch (error) {
@@ -416,7 +412,7 @@ export function App() {
 
   return (
     <div className="app-shell">
-      <Header page={page} onPage={setPage} oauthUser={oauthUser} onLogout={async () => { await logoutOAuth(); setOauthUser(null); }} />
+      <Header page={page} onPage={setPage} oauthUser={oauthUser} onLogout={async () => { await logoutOAuth(); setDatabaseReady(false); setSyncNotice(null); setState(loadState("anonymous")); setNotebookId(loadState("anonymous").notebooks[0]?.id ?? ""); setPaperId(loadState("anonymous").papers[0]?.id ?? null); setOauthUser(null); }} />
       {syncNotice && (
         <div className="generation-notice sync-notice">
           {syncNotice}
