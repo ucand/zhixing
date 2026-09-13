@@ -50,7 +50,7 @@ function queryValue(request: Request, ...names: string[]) {
 }
 function profileFromToken(payload: Record<string, unknown>) {
   const names = new Set(['name', 'Name', 'fullname', 'Fullname', 'full_name', 'FullName', 'nickname', 'Nickname', 'user_name', 'UserName', 'display_name', 'DisplayName'])
-  const ids = new Set(['id', 'Id', 'user_id', 'UserId', 'url_token', 'UrlToken', 'urlToken'])
+  const ids = new Set(['id', 'Id', 'sub', 'Sub', 'openid', 'Openid', 'open_id', 'OpenId', 'user_id', 'UserId', 'url_token', 'UrlToken', 'urlToken'])
   let foundName: string | undefined
   let foundId: string | number | undefined
   const visit = (value: unknown) => {
@@ -125,10 +125,11 @@ export async function completeZhihuOAuth(request: Request, response: Response) {
     const existing = profile.providerUserId
       ? await client.query('select user_id from zhihu_oauth_account where provider=\'zhihu\' and provider_user_id=$1 limit 1', [profile.providerUserId])
       : { rows: [] as Array<{ user_id: string }> }
-    const legacy = !existing.rows[0]
-      ? await client.query("select u.id from app_user u where not exists (select 1 from zhihu_oauth_account a where a.user_id=u.id) and exists (select 1 from notebook n where n.user_id=u.id) order by u.created_at asc limit 1")
-      : { rows: [] as Array<{ id: string }> }
-    const userId = existing.rows[0]?.user_id ?? legacy.rows[0]?.id
+    // Never reuse an unrelated legacy user when the provider identity is
+    // unavailable. That fallback caused different Zhihu accounts to share
+    // the first user's business data.
+    if (!profile.providerUserId) throw new Error('知乎 OAuth 未返回稳定的用户唯一标识，无法安全绑定账号')
+    const userId = existing.rows[0]?.user_id
     if (userId) await client.query('update app_user set display_name=$2, updated_at=now() where id=$1', [userId, profile.name])
     const user = userId ? { rows: [{ id: userId }] } : await client.query('insert into app_user (display_name) values ($1) returning id', [profile.name])
     const resolvedUserId = user.rows[0].id as string
