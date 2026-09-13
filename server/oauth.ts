@@ -80,7 +80,14 @@ async function fetchZhihuProfile(accessToken: string): Promise<{ name?: string; 
     if (!result.ok) return {}
     const payload = await result.json() as Record<string, unknown>
     const nested = (payload.data ?? payload.Data ?? payload.user ?? payload.User) as Record<string, unknown> | undefined
-    return profileFromToken(nested ? { user: nested } : payload)
+    const profile = profileFromToken(nested ? { user: nested } : payload)
+    // Do not return null identity fields: callers may already have a valid
+    // provider ID from the token response, and an incomplete profile response
+    // must not erase it.
+    return {
+      ...(profile.name && profile.name !== '知乎用户' ? { name: profile.name } : {}),
+      ...(profile.providerUserId ? { providerUserId: profile.providerUserId } : {}),
+    }
   } catch {
     return {}
   }

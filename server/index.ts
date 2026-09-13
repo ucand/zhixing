@@ -27,7 +27,12 @@ app.post('/api/auth/logout', async (request, response, next) => { try { await lo
 app.use('/api/state', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
 app.use('/api/notebooks', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
 app.use('/api/notes', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
-app.use('/api/papers', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
+app.use('/api/papers', (request, response, next) => {
+  // Keep Zhihu Zhida generation available; only persistence endpoints are
+  // local-only because papers themselves are stored in localStorage.
+  if (request.path === '/generate' && request.method === 'POST') return next()
+  return response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } })
+})
 app.use('/api/tasks', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
 
 app.get('/api/zhihu/search', async (request, response, next) => {
