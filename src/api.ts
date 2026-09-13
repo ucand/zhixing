@@ -13,6 +13,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new ApiError('API_OFFLINE', '后端服务未启动，请使用 pnpm dev 启动完整应用', 0)
   }
+  if (response.status === 204) return undefined as T
   const contentType = response.headers.get('content-type') ?? ''
   if (!contentType.includes('application/json')) {
     throw new ApiError('API_MISROUTED', '当前页面没有连接到知行 API，请使用 pnpm dev 或 pnpm start 启动完整应用', response.status)
