@@ -1,11 +1,10 @@
 import express from 'express'
 import path from 'node:path'
 import { ZodError } from 'zod'
-import { appStateSchema, generateRequestSchema, notebookMutationSchema, noteMutationSchema, paperPersistenceSchema, taskMutationSchema } from './contracts.js'
+import { generateRequestSchema } from './contracts.js'
 import { databaseHealth } from './db.js'
 import { generateWithZhihu, searchZhihu } from './zhihu.js'
-import { beginZhihuOAuth, completeZhihuOAuth, currentOAuthUser, logoutOAuth, oauthConfigured, requireOAuthUserId } from './oauth.js'
-import { createNotebook, createNote, createPaper, deleteNotebook, deleteNote, deletePaper, migrateState, readState, updateNotebook, updateNote, updateTask } from './repository.js'
+import { beginZhihuOAuth, completeZhihuOAuth, currentOAuthUser, logoutOAuth, oauthConfigured } from './oauth.js'
 
 const app = express()
 const port = Number(process.env.PORT || 8787)
@@ -23,19 +22,13 @@ app.get('/api/auth/zhihu/callback', async (request, response, next) => { try { a
 app.get('/api/auth/me', async (request, response, next) => { try { response.json({ user: await currentOAuthUser(request) }) } catch (error) { next(error) } })
 app.post('/api/auth/logout', async (request, response, next) => { try { await logoutOAuth(request, response) } catch (error) { next(error) } })
 
-async function requireDataSession(request: express.Request) { return requireOAuthUserId(request) }
-
-app.get('/api/state', async (request, response, next) => { try { const uid = await requireDataSession(request); response.json(await readState(uid)) } catch (error) { next(error) } })
-app.post('/api/state/migrate', async (request, response, next) => { try { const uid = await requireDataSession(request); const state = appStateSchema.parse(request.body); response.json(await migrateState(state, uid)) } catch (error) { next(error) } })
-app.delete('/api/notebooks/:id', async (request, response, next) => { try { const uid = await requireDataSession(request); await deleteNotebook(request.params.id, uid); response.status(204).end() } catch (error) { next(error) } })
-app.post('/api/notebooks', async (request, response, next) => { try { const uid = await requireDataSession(request); response.status(201).json(await createNotebook(notebookMutationSchema.parse(request.body), uid)) } catch (error) { next(error) } })
-app.patch('/api/notebooks/:id', async (request, response, next) => { try { const uid = await requireDataSession(request); response.json(await updateNotebook(request.params.id, notebookMutationSchema.parse(request.body), uid)) } catch (error) { next(error) } })
-app.delete('/api/notes/:id', async (request, response, next) => { try { const uid = await requireDataSession(request); await deleteNote(request.params.id, uid); response.status(204).end() } catch (error) { next(error) } })
-app.post('/api/notes', async (request, response, next) => { try { const uid = await requireDataSession(request); response.status(201).json(await createNote(noteMutationSchema.required({ notebookId: true }).parse(request.body), uid)) } catch (error) { next(error) } })
-app.patch('/api/notes/:id', async (request, response, next) => { try { const uid = await requireDataSession(request); response.json(await updateNote(request.params.id, noteMutationSchema.omit({ notebookId: true, source: true }).parse(request.body), uid)) } catch (error) { next(error) } })
-app.delete('/api/papers/:id', async (request, response, next) => { try { const uid = await requireDataSession(request); await deletePaper(request.params.id, uid); response.status(204).end() } catch (error) { next(error) } })
-app.post('/api/papers', async (request, response, next) => { try { const uid = await requireDataSession(request); const paper = paperPersistenceSchema.parse(request.body); await createPaper(paper, uid); response.status(201).json(paper) } catch (error) { next(error) } })
-app.patch('/api/tasks/:id', async (request, response, next) => { try { const uid = await requireDataSession(request); const input = taskMutationSchema.parse(request.body); response.json(await updateTask(request.params.id, input.completed, uid)) } catch (error) { next(error) } })
+// Business data is intentionally local-only. Keep these legacy routes closed
+// so no client or stale deployment can write notebooks, notes, or papers.
+app.use('/api/state', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
+app.use('/api/notebooks', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
+app.use('/api/notes', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
+app.use('/api/papers', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
+app.use('/api/tasks', (_request, response) => response.status(410).json({ error: { code: 'LOCAL_ONLY', message: '业务数据仅保存在浏览器本地缓存' } }))
 
 app.get('/api/zhihu/search', async (request, response, next) => {
   try {

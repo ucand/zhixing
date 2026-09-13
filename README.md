@@ -50,8 +50,8 @@ Windows 下 API 开发命令会先编译服务端，再启动 Node 服务。修�
 
 - `GET /api/zhihu/search?q=关键词` 调用知乎站内搜索并返回真实内容摘要与溯源链接。
 - `POST /api/papers/generate` 调用知乎直答 `zhida-thinking-1p5` 生成结构化答卷。
-- `GET /api/state` 读取 PostgreSQL 中的完整应用状态。
-- `POST /api/state/migrate` 将浏览器 localStorage 数据事务化迁移到 PostgreSQL。
+- 笔记本、笔记、答卷和任务仅保存在浏览器 `localStorage`，不通过 API 读写 PostgreSQL。
+- `/api/state`、`/api/notebooks`、`/api/notes`、`/api/papers` 和 `/api/tasks` 等历史业务接口已停用并返回 `LOCAL_ONLY`。
 - `POST/PATCH/DELETE /api/notebooks`、`POST/PATCH/DELETE /api/notes` 提供笔记本与笔记 CRUD。
 - `DELETE /api/papers/:id` 删除答卷，`PATCH /api/tasks/:id` 更新答卷任务完成状态。
 - 本地开发默认通过官方知乎 CLI 读取系统凭据库，不需要把 Access Secret 写进项目。
