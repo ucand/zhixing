@@ -4,6 +4,7 @@ import { pool } from './db.js'
 
 const AUTHORIZE_URL = 'https://openapi.zhihu.com/authorize'
 const TOKEN_URL = 'https://openapi.zhihu.com/access_token'
+const API_ROOT = 'https://developer.zhihu.com'
 const SESSION_COOKIE = 'zhixing_session'
 const STATE_COOKIE = 'zhixing_oauth_state'
 const DAY = 24 * 60 * 60 * 1000
@@ -56,6 +57,26 @@ function profileFromToken(payload: Record<string, unknown>) {
     .find((value): value is string | number => (typeof value === 'string' && value.trim().length > 0) || typeof value === 'number')
   return { name: name || '知乎用户', providerUserId: providerUserId === undefined ? null : String(providerUserId) }
 }
+async function fetchZhihuProfile(accessToken: string): Promise<{ name?: string; providerUserId?: string | null }> {
+  const accessSecret = process.env.ZHIHU_ACCESS_SECRET
+  if (!accessSecret) return {}
+  try {
+    const result = await fetch(`${API_ROOT}/api/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${accessSecret}`,
+        'X-OAuth-Token': accessToken,
+        'X-Request-Timestamp': String(Math.floor(Date.now() / 1000)),
+        'Content-Type': 'application/json',
+      },
+    })
+    if (!result.ok) return {}
+    const payload = await result.json() as Record<string, unknown>
+    const nested = (payload.data ?? payload.Data ?? payload.user ?? payload.User) as Record<string, unknown> | undefined
+    return profileFromToken(nested ? { user: nested } : payload)
+  } catch {
+    return {}
+  }
+}
 
 export function oauthConfigured() { return Boolean(process.env.ZHIHU_APP_ID && process.env.ZHIHU_APP_KEY && process.env.ZHIHU_OAUTH_REDIRECT_URI && process.env.ZHIHU_OAUTH_SESSION_SECRET) }
 
@@ -92,7 +113,7 @@ export async function completeZhihuOAuth(request: Request, response: Response) {
   const client = await pool.connect()
   try {
     await client.query('begin')
-    const profile = profileFromToken(tokenPayload)
+    const profile = { ...profileFromToken(tokenPayload), ...(await fetchZhihuProfile(tokenPayload.access_token)) }
     const user = await client.query('insert into app_user (display_name) values ($1) returning id', [profile.name])
     const userId = user.rows[0].id as string
     await client.query("insert into zhihu_oauth_account (user_id, provider_user_id, access_token_ciphertext, token_type, expires_at) values ($1,$2,$3,$4,case when $5::bigint > 0 then now() + ($5::bigint * interval '1 second') else null end)", [userId, profile.providerUserId, encrypt(tokenPayload.access_token, sessionSecret), tokenPayload.token_type ?? 'Bearer', tokenPayload.expires_in ?? 0])
