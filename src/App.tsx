@@ -178,6 +178,7 @@ export function App() {
         const health = await getApiHealth();
         if (health.database !== "connected") return;
         if (mounted) setDatabaseReady(true);
+        const oauthUser = await getOAuthUser();
         const localState = loadState();
         const remoteState = await loadRemoteState();
         if (
@@ -190,11 +191,11 @@ export function App() {
             setNotebookId(remoteState.notebooks[0]?.id ?? "");
             setPaperId(remoteState.papers[0]?.id ?? null);
           }
-        } else if (
+        } else if (!oauthUser && (
           localState.notebooks.length ||
           localState.notes.length ||
           localState.papers.length
-        ) {
+        )) {
           await migrateLocalState(localState);
           const migrated = await loadRemoteState();
           if (mounted) {

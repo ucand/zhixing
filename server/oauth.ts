@@ -122,11 +122,19 @@ export async function completeZhihuOAuth(request: Request, response: Response) {
   try {
     await client.query('begin')
     const profile = { ...profileFromToken(tokenPayload), ...(await fetchZhihuProfile(tokenPayload.access_token)) }
-    const user = await client.query('insert into app_user (display_name) values ($1) returning id', [profile.name])
-    const userId = user.rows[0].id as string
-    await client.query("insert into zhihu_oauth_account (user_id, provider_user_id, access_token_ciphertext, token_type, expires_at) values ($1,$2,$3,$4,case when $5::bigint > 0 then now() + ($5::bigint * interval '1 second') else null end)", [userId, profile.providerUserId, encrypt(tokenPayload.access_token, sessionSecret), tokenPayload.token_type ?? 'Bearer', tokenPayload.expires_in ?? 0])
+    const existing = profile.providerUserId
+      ? await client.query('select user_id from zhihu_oauth_account where provider=\'zhihu\' and provider_user_id=$1 limit 1', [profile.providerUserId])
+      : { rows: [] as Array<{ user_id: string }> }
+    const legacy = !existing.rows[0]
+      ? await client.query("select u.id from app_user u where not exists (select 1 from zhihu_oauth_account a where a.user_id=u.id) and exists (select 1 from notebook n where n.user_id=u.id) order by u.created_at asc limit 1")
+      : { rows: [] as Array<{ id: string }> }
+    const userId = existing.rows[0]?.user_id ?? legacy.rows[0]?.id
+    if (userId) await client.query('update app_user set display_name=$2, updated_at=now() where id=$1', [userId, profile.name])
+    const user = userId ? { rows: [{ id: userId }] } : await client.query('insert into app_user (display_name) values ($1) returning id', [profile.name])
+    const resolvedUserId = user.rows[0].id as string
+    await client.query("insert into zhihu_oauth_account (user_id, provider_user_id, access_token_ciphertext, token_type, expires_at) values ($1,$2,$3,$4,case when $5::bigint > 0 then now() + ($5::bigint * interval '1 second') else null end) on conflict (user_id, provider) do update set provider_user_id=excluded.provider_user_id, access_token_ciphertext=excluded.access_token_ciphertext, token_type=excluded.token_type, expires_at=excluded.expires_at, updated_at=now()", [resolvedUserId, profile.providerUserId, encrypt(tokenPayload.access_token, sessionSecret), tokenPayload.token_type ?? 'Bearer', tokenPayload.expires_in ?? 0])
     const session = randomToken()
-    await client.query("insert into oauth_session (user_id, token_hash, expires_at) values ($1,$2,now() + interval '30 days')", [userId, digest(session)])
+    await client.query("insert into oauth_session (user_id, token_hash, expires_at) values ($1,$2,now() + interval '30 days')", [resolvedUserId, digest(session)])
     await client.query('commit'); setSession(response, session); response.redirect('/?oauth=success')
   } catch (error) { await client.query('rollback'); throw error } finally { client.release() }
 }
