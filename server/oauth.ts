@@ -47,6 +47,15 @@ function queryValue(request: Request, ...names: string[]) {
   }
   return ''
 }
+function profileFromToken(payload: Record<string, unknown>) {
+  const user = (payload.user ?? payload.user_info ?? payload.userInfo) as Record<string, unknown> | undefined
+  const source = user ?? payload
+  const name = [source.name, source.fullname, source.full_name, source.nickname, source.user_name, source.display_name]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim()
+  const providerUserId = [source.id, source.user_id, source.url_token, source.urlToken]
+    .find((value): value is string | number => (typeof value === 'string' && value.trim().length > 0) || typeof value === 'number')
+  return { name: name || '知乎用户', providerUserId: providerUserId === undefined ? null : String(providerUserId) }
+}
 
 export function oauthConfigured() { return Boolean(process.env.ZHIHU_APP_ID && process.env.ZHIHU_APP_KEY && process.env.ZHIHU_OAUTH_REDIRECT_URI && process.env.ZHIHU_OAUTH_SESSION_SECRET) }
 
@@ -78,14 +87,15 @@ export async function completeZhihuOAuth(request: Request, response: Response) {
   clearStateCookie(response)
   const body = new URLSearchParams({ app_id: appId, app_key: appKey, grant_type: 'authorization_code', redirect_uri: redirectUri, code })
   const tokenResponse = await fetch(TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body })
-  const tokenPayload = await tokenResponse.json() as { access_token?: string; token_type?: string; expires_in?: number; message?: string }
+  const tokenPayload = await tokenResponse.json() as Record<string, unknown> & { access_token?: string; token_type?: string; expires_in?: number; message?: string }
   if (!tokenResponse.ok || !tokenPayload.access_token) throw new Error(tokenPayload.message || '知乎 OAuth Token 获取失败')
   const client = await pool.connect()
   try {
     await client.query('begin')
-    const user = await client.query("insert into app_user (display_name) values ('知乎用户') returning id")
+    const profile = profileFromToken(tokenPayload)
+    const user = await client.query('insert into app_user (display_name) values ($1) returning id', [profile.name])
     const userId = user.rows[0].id as string
-    await client.query("insert into zhihu_oauth_account (user_id, access_token_ciphertext, token_type, expires_at) values ($1,$2,$3,case when $4::bigint > 0 then now() + ($4::bigint * interval '1 second') else null end)", [userId, encrypt(tokenPayload.access_token, sessionSecret), tokenPayload.token_type ?? 'Bearer', tokenPayload.expires_in ?? 0])
+    await client.query("insert into zhihu_oauth_account (user_id, provider_user_id, access_token_ciphertext, token_type, expires_at) values ($1,$2,$3,$4,case when $5::bigint > 0 then now() + ($5::bigint * interval '1 second') else null end)", [userId, profile.providerUserId, encrypt(tokenPayload.access_token, sessionSecret), tokenPayload.token_type ?? 'Bearer', tokenPayload.expires_in ?? 0])
     const session = randomToken()
     await client.query("insert into oauth_session (user_id, token_hash, expires_at) values ($1,$2,now() + interval '30 days')", [userId, digest(session)])
     await client.query('commit'); setSession(response, session); response.redirect('/?oauth=success')
