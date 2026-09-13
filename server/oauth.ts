@@ -5,6 +5,7 @@ import { pool } from './db.js'
 const AUTHORIZE_URL = 'https://openapi.zhihu.com/authorize'
 const TOKEN_URL = 'https://openapi.zhihu.com/access_token'
 const SESSION_COOKIE = 'zhixing_session'
+const STATE_COOKIE = 'zhixing_oauth_state'
 const DAY = 24 * 60 * 60 * 1000
 
 function config() {
@@ -28,7 +29,16 @@ function setSession(response: Response, token: string) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
   response.setHeader('Set-Cookie', `${SESSION_COOKIE}=${token}; Max-Age=${30 * DAY / 1000}; Path=/; HttpOnly; SameSite=Lax${secure}`)
 }
+function setStateCookie(response: Response, token: string) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  response.append('Set-Cookie', `${STATE_COOKIE}=${token}; Max-Age=600; Path=/; HttpOnly; SameSite=Lax${secure}`)
+}
+function clearStateCookie(response: Response) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  response.append('Set-Cookie', `${STATE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure}`)
+}
 function getCookie(request: Request) { return request.headers.cookie?.match(/(?:^|; )zhixing_session=([^;]+)/)?.[1] }
+function getStateCookie(request: Request) { return request.headers.cookie?.match(/(?:^|; )zhixing_oauth_state=([^;]+)/)?.[1] }
 
 export function oauthConfigured() { return Boolean(process.env.ZHIHU_APP_ID && process.env.ZHIHU_APP_KEY && process.env.ZHIHU_OAUTH_REDIRECT_URI && process.env.ZHIHU_OAUTH_SESSION_SECRET) }
 
@@ -38,19 +48,23 @@ export async function beginZhihuOAuth(response: Response) {
   const state = randomToken()
   await pool.query('delete from oauth_state where expires_at < now()')
   await pool.query("insert into oauth_state (state_hash, redirect_uri, expires_at) values ($1,$2,now() + interval '10 minutes')", [digest(state), redirectUri])
+  setStateCookie(response, state)
   const url = new URL(AUTHORIZE_URL)
-  url.searchParams.set('redirect_uri', redirectUri); url.searchParams.set('app_id', appId); url.searchParams.set('response_type', 'code'); url.searchParams.set('state', state)
+  // Zhihu's current authorize endpoint rejects/omits state. Keep the
+  // correlation value in a short-lived HttpOnly cookie instead.
+  url.searchParams.set('redirect_uri', redirectUri); url.searchParams.set('app_id', appId); url.searchParams.set('response_type', 'code')
   response.redirect(url.toString())
 }
 
 export async function completeZhihuOAuth(request: Request, response: Response) {
   const { appId, appKey, redirectUri, sessionSecret } = config()
   if (!pool) throw new Error('DATABASE_URL 未配置，无法完成 OAuth 授权')
-  const state = String(request.query.state ?? '')
+  const state = String(request.query.state ?? getStateCookie(request) ?? '')
   const code = String(request.query.authorization_code ?? request.query.code ?? '')
   if (!state || !code) throw new Error('知乎 OAuth 回调缺少授权参数')
   const stateResult = await pool.query('delete from oauth_state where state_hash=$1 and redirect_uri=$2 and expires_at > now() returning id', [digest(state), redirectUri])
   if (!stateResult.rows[0]) throw new Error('知乎 OAuth state 无效或已过期')
+  clearStateCookie(response)
   const body = new URLSearchParams({ app_id: appId, app_key: appKey, grant_type: 'authorization_code', redirect_uri: redirectUri, code })
   const tokenResponse = await fetch(TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body })
   const tokenPayload = await tokenResponse.json() as { access_token?: string; token_type?: string; expires_in?: number; message?: string }
