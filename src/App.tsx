@@ -542,6 +542,8 @@ function Header({
   oauthUser: { id: string; display_name: string } | null;
   onLogout: () => Promise<void>;
 }) {
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const avatarLabel = oauthUser?.display_name?.trim().slice(0, 1) || "知";
   return (
     <header className="appbar">
       <button className="brand" onClick={() => onPage("notes")}>
@@ -566,8 +568,11 @@ function Header({
       </nav>
       {oauthUser ? (
         <div className="oauth-user">
-          <span className="oauth-user-name">{oauthUser.display_name}</span>
-          <button className="tool" type="button" onClick={() => void onLogout()}>退出知乎</button>
+          <button className="oauth-avatar" type="button" aria-label={`知乎账号 ${oauthUser.display_name}`} aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)}>{avatarLabel}</button>
+          {accountMenuOpen && <div className="oauth-menu" role="menu">
+            <div className="oauth-menu-name">{oauthUser.display_name}</div>
+            <button className="oauth-menu-action" type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); void onLogout(); }}>退出登录</button>
+          </div>}
         </div>
       ) : (
         <button className="tool" type="button" onClick={() => { window.location.href = "/api/auth/zhihu" }}>
